@@ -34,10 +34,13 @@ If the user provides `$ARGUMENTS`, parse them: `$ARGUMENTS[0]` = language/framew
 
 ### Step 2: Generate Project Structure
 
-Read the architecture reference for the chosen framework:
+Read the architecture references for the chosen framework:
 - For detailed structure patterns, see [references/project-structures.md](references/project-structures.md)
 - For module design patterns, see [references/module-design.md](references/module-design.md)
 - For comparison and decision guide, see [references/architecture-guide.md](references/architecture-guide.md)
+- For event-driven patterns and event bus design, see [references/event-driven-patterns.md](references/event-driven-patterns.md)
+- For inter-module communication and contract versioning, see [references/api-versioning-communication.md](references/api-versioning-communication.md)
+- For concrete scaffold examples, see [examples/dotnet-scaffold.md](examples/dotnet-scaffold.md) and [examples/nestjs-scaffold.md](examples/nestjs-scaffold.md)
 
 Generate the project following these **critical rules**:
 
@@ -70,9 +73,10 @@ For each module, generate:
 Also generate:
 - **Shared kernel**: Base classes, event bus, common abstractions
 - **Host/entry point**: Composition root, middleware, configuration
-- **Tests**: Module unit test projects with example tests
+- **Tests**: Module unit tests, integration tests, contract tests, and architecture boundary tests — see [references/testing-strategies.md](references/testing-strategies.md)
+- **Observability**: Module-scoped logging, health checks, and tracing setup — see [references/observability.md](references/observability.md)
 - **Docker** (if requested): Dockerfile + docker-compose with database
-- **README.md**: Architecture overview, how to run, how to add modules
+- **README.md**: Architecture overview, how to run, how to add modules (use [examples/README-template.md](examples/README-template.md))
 
 ### Step 4: Validate
 
@@ -82,6 +86,19 @@ After generation:
 3. Check that the shared kernel contains no business logic
 4. Ensure the project builds/compiles successfully
 5. Run any generated tests
+
+Validation scripts are available in [scripts/](scripts/) for CI integration:
+- `scripts/validate-boundaries.sh <modules-dir>` — detects cross-module boundary violations
+- `scripts/validate-shared-kernel.sh <shared-dir> <modules-dir>` — ensures shared kernel doesn't reference modules
+- `scripts/check-circular-deps.sh <modules-dir>` — detects circular dependencies between modules
+
+### Step 5: Migration Guidance
+
+If the user asks about extracting modules to microservices, see [references/migration-to-microservices.md](references/migration-to-microservices.md) for a detailed step-by-step guide covering:
+- When to extract (evidence-based signals)
+- Pre-extraction checklist
+- Creating the service, swapping the implementation, adding resilience
+- Rollback strategy
 
 ## Key Principles to Enforce
 

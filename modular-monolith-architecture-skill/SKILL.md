@@ -1,5 +1,5 @@
 ---
-name: modular-monolith
+name: modular-monolith-architecture
 description: Scaffold and create a Modular Monolithic Architecture project. Use when the user wants to create a new modular monolith, restructure a monolith into modules, design module boundaries, or set up a project following modular monolith best practices. Supports multiple languages and frameworks.
 argument-hint: "[language/framework] [project-name] [modules...]"
 ---

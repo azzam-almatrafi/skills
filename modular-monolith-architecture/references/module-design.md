@@ -22,6 +22,8 @@ module/
 
 **Dependency rule**: domain ← application ← infrastructure, api → application
 
+> **In Go**, this `api/` (controllers/handlers) maps to `internal/handler/`; the cross-module *contract* is its own `api/` package that imports nothing (see project-structures.md).
+
 ### Option 2: Clean Architecture (Complex Modules)
 
 Best for modules with rich business logic and many domain rules.
@@ -151,11 +153,76 @@ export class LegacyShippingAdapter implements IShippingProvider {
 }
 ```
 
+### Pattern 4: Go — contract, consumer, wiring, and live events
+
+Go has no DI container and the compiler rejects import cycles, so the contract package must stay dependency-free and wiring is explicit.
+
+```go
+// product/api/product_contract.go — PUBLIC in-process contract (NOT the HTTP API).
+// Imports nothing from the module's internals → can never cause an import cycle.
+package productapi
+
+import "context"
+
+type ProductDTO struct {
+	ID         string
+	Name       string
+	PriceCents int64
+	Available  bool
+}
+
+type ProductAPI interface {
+	GetByIDs(ctx context.Context, ids []string) ([]ProductDTO, error)
+	CheckAvailability(ctx context.Context, productID string, qty int) (bool, error)
+}
+```
+
+```go
+// order/internal/application/order_service.go — consumer depends on the CONTRACT only.
+type Service struct {
+	products productapi.ProductAPI // injected; never product's internal packages
+	bus      events.Bus
+}
+
+func (s *Service) PlaceOrder(ctx context.Context, in PlaceOrderInput) error {
+	ok, err := s.products.CheckAvailability(ctx, in.ProductID, in.Qty) // sync cross-call
+	if err != nil || !ok {
+		return fmt.Errorf("product %s unavailable: %w", in.ProductID, err)
+	}
+	// ... persist order ...
+	return s.bus.Publish(ctx, contracts.OrderPlaced{OrderID: id, TotalCents: total}) // async
+}
+```
+
+```go
+// payment/payment_module.go — the subscription is registered in the facade's New.
+// Forget this line and the bus has publishers but ZERO subscribers (events dropped).
+func New(bus events.Bus) *Module {
+	svc := application.NewService(infrastructure.NewRepo())
+	bus.Subscribe(contracts.OrderPlacedType, svc.OnOrderPlaced)
+	return &Module{api: svc}
+}
+```
+
+```go
+// cmd/server/main.go — composition root: manual constructor injection, in order.
+func main() {
+	db := openDB(cfg)
+	bus := events.NewInMemoryBus()
+	productMod := product.New(db, bus)
+	orderMod := order.New(productMod.API(), db, bus) // inject product's contract into order
+	payment.New(bus)                             // self-subscribes inside New
+	// ... register routes, serve ...
+}
+```
+
 ---
 
 ## Database Schema Isolation
 
-### Strategy 1: Schema-per-Module (Recommended)
+A module can own a **separate database** (strongest isolation), or share one database with other modules. When sharing a database, isolate them with one of these:
+
+### Strategy 1: Schema-per-Module (Recommended when sharing a database)
 
 Each module uses a named schema in the same database.
 
@@ -287,6 +354,33 @@ export class ProductModule {}
 })
 export class AppModule {}
 ```
+
+### Go (manual composition root — no DI container)
+
+Go has no `IServiceCollection`/`@Module` container. Each module's `New` IS its registration
+(it builds internals and subscribes to events); the composition root calls them in
+dependency order and injects one module's contract into the next.
+
+```go
+// cmd/server/main.go
+func main() {
+	db := openDB(cfg)
+	bus := events.NewInMemoryBus()
+
+	productMod := product.New(db, bus)           // no module deps
+	orderMod := order.New(productMod.API(), db, bus) // needs product's contract + bus
+	payment.New(bus)                             // needs bus only; subscribes in New
+
+	mux := http.NewServeMux()
+	productMod.RegisterRoutes(mux)
+	orderMod.RegisterRoutes(mux)
+	log.Fatal(http.ListenAndServe(":8080", mux))
+}
+```
+
+For very large dependency graphs, `google/wire` generates this wiring at compile time
+(still no runtime reflection). Avoid runtime DI containers — they hide the graph the
+compiler would otherwise verify.
 
 ---
 

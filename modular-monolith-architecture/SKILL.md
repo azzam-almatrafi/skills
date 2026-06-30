@@ -16,7 +16,7 @@ This skill scaffolds complete projects with:
 - **Module isolation**: Each module owns its domain, data access, and API surface
 - **Inter-module communication**: Via public contracts/interfaces, never internal details
 - **Shared kernel**: Cross-cutting concerns (auth, logging, events) in a shared layer
-- **Database-per-module schema**: Logical isolation within a single RDBMS
+- **Per-module data ownership**: each module owns its schema/tables — a shared RDBMS by default, or its own database when isolation or scale require it
 - **Migration-ready boundaries**: Modules can be extracted to microservices later
 
 ## Workflow
@@ -59,7 +59,7 @@ Generate the project following these **critical rules**:
 #### Infrastructure Rules
 1. Single entry point (Program.cs / main.ts / main.py / main.go)
 2. Composition root wires all modules together
-3. Database context/session is shared but schemas are isolated
+3. The composition root injects each module's database handle: a shared connection with per-module schemas by default, or a separate connection/database per module
 4. Event bus for async inter-module communication (in-process, upgradeable to message broker)
 
 ### Step 3: Generate Code
@@ -107,7 +107,7 @@ If the user asks about extracting modules to microservices, see [references/migr
 | High Cohesion | Module contains everything for its domain | Domain + Application + Infrastructure + API per module |
 | Low Coupling | Modules don't depend on each other's internals | Communication only via shared contracts/interfaces |
 | Single Responsibility | Each module has one bounded context | One business domain per module directory |
-| Encapsulated Data | Module owns its data | Separate DB schema per module, no cross-module queries |
+| Encapsulated Data | Module owns its data | Per-module schema (or its own database); no cross-module queries |
 | Explicit Dependencies | All module dependencies are visible | Module registration file listing required contracts |
 | Domain-Driven Design | Modules align with business domains | Named after business capabilities, not technical layers |
 

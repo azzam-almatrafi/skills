@@ -264,6 +264,8 @@ The Reporting module:
 
 Define explicit error types in the module contract.
 
+**Go:** put package-level sentinel errors (`var ErrNotFound = errors.New(...)`) in the module's `api/` package so callers can `errors.Is` them, not in `internal/domain` (which other modules cannot import).
+
 ```typescript
 // product/api/errors.ts — part of the public contract
 export class ProductNotFoundError extends Error {

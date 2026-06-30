@@ -281,51 +281,59 @@ my-app/
 my-app/
 ├── cmd/
 │   └── server/
-│       └── main.go                          # Entry point & composition root
+│       └── main.go                              # Entry point & composition root
 │
-├── internal/                                # Go enforces this is non-importable
-│   ├── shared/                              # Shared kernel
-│   │   ├── domain/
-│   │   │   ├── entity.go
-│   │   │   └── event.go
+├── internal/
+│   ├── shared/                                  # Shared kernel
 │   │   ├── events/
-│   │   │   ├── bus.go                       # EventBus interface
-│   │   │   └── inmemory.go                  # In-process implementation
+│   │   │   ├── bus.go                           # EventBus interface
+│   │   │   └── inmemory_bus.go                  # In-process implementation
+│   │   ├── contracts/                           # Integration events: publisher & subscriber both import here, so neither couples to the other
+│   │   │   └── order_events.go                  # OrderPlaced, PaymentCaptured, ...
 │   │   └── valueobjects/
 │   │       ├── money.go
 │   │       └── email.go
 │   │
 │   └── modules/
 │       ├── product/
-│       │   ├── domain/
-│       │   │   ├── product.go
-│       │   │   └── repository.go            # Interface
-│       │   ├── application/
-│       │   │   ├── service.go
-│       │   │   ├── commands.go
-│       │   │   └── dto.go
-│       │   ├── infrastructure/
-│       │   │   ├── postgres_repository.go
-│       │   │   └── migrations/
-│       │   │       └── 001_create_products.sql
-│       │   ├── api/                         # PUBLIC contract
-│       │   │   └── module.go                # ProductModule interface
-│       │   └── handler/
-│       │       └── http.go                  # HTTP handlers
+│       │   ├── api/                             # PUBLIC contract for OTHER modules; name the package "productapi" (not bare "api") to avoid clashes
+│       │   │   └── product_contract.go          # ProductAPI interface + DTOs + command/query in/out types (NOT HTTP)
+│       │   ├── internal/                        # per-module internal/ → compiler blocks cross-module imports
+│       │   │   ├── domain/
+│       │   │   │   ├── product.go
+│       │   │   │   └── product_repository.go    # Repository port (interface)
+│       │   │   ├── application/
+│       │   │   │   ├── commands/
+│       │   │   │   │   ├── create_product.go    # CreateProductCommand + handler
+│       │   │   │   │   └── update_product.go    # UpdateProductCommand + handler
+│       │   │   │   ├── queries/
+│       │   │   │   │   ├── get_products.go      # GetProductsQuery + handler
+│       │   │   │   │   └── search_products.go   # SearchProductsQuery + handler
+│       │   │   │   └── product_service.go       # implements productapi.ProductAPI; delegates to handlers
+│       │   │   ├── infrastructure/
+│       │   │   │   ├── product_repository_adapter.go  # sqlc / GORM / Ent adapter
+│       │   │   │   └── migrations/              # managed by database migration tool (Atlas, golang-migrate, Skeema)
+│       │   │   │       └── 001_create_products.sql
+│       │   │   └── handler/
+│       │   │       ├── product_handler.go       # HTTP handlers (consumer of the contract)
+│       │   │       ├── product_requests.go      # request DTOs: decode + validate input
+│       │   │       └── product_responses.go     # response DTOs: shape JSON output
+│       │   └── product_module.go                # Factory: New(db, bus) builds the graph; exposes API() + RegisterRoutes()
 │       │
-│       ├── order/                           # Same structure
-│       └── payment/
+│       ├── order/                               # Same structure as product
+│       │   └── ...
+│       └── payment/                             # Same structure
+│           └── ...
 │
-├── pkg/                                     # Public shared utilities (optional)
+├── pkg/                                         # Public shared utilities (optional)
 │   └── httputil/
 │       └── response.go
 │
 ├── tests/
 │   ├── integration/
-│   │   ├── product_test.go
-│   │   └── order_test.go
+│   │   └── wiring_test.go
 │   └── architecture/
-│       └── boundaries_test.go
+│       └── boundaries_test.go               # optional in Go: the compiler already enforces cross-module internals
 │
 ├── go.mod
 ├── go.sum
@@ -336,10 +344,11 @@ my-app/
 ```
 
 ### Key Go Notes
-- Go's `internal/` directory naturally prevents external access to module internals
-- Use **interfaces** for module contracts — Go interfaces are implicit
-- Consider **Google Service Weaver** for production modular monoliths in Go
-- **sqlc** or **GORM** for database access with per-module migration folders
+- **`api/` is a standalone subpackage** (sibling of `internal/`) that imports nothing; put the contract here, not in the facade/root package. `internal/handler/` holds the HTTP API.
+- **The facade (`product_module.go`) is the only public assembler** — its inputs and outputs must be public types, never `internal/...` types.
+- **Keep file names unique across modules** — use `product_contract.go`, `product_handler.go`, etc., not bare `contract.go`/`module.go`, which collide once you have many modules.
+- **A module imports its OWN `internal/...` freely** — the facade and layers wire each other; the nested `internal/` only blocks OTHER modules from reaching in.
+- **A small module may be a single package** (exported names = its contract, unexported = its internals); add `internal/` layers only as it grows.
 
 ---
 
